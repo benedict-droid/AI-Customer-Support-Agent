@@ -5,6 +5,11 @@ from core.logging import setup_logging
 import logging
 
 from mcp_integration.client import MCPClient
+from dotenv import load_dotenv
+import os
+
+# Load env vars
+load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
