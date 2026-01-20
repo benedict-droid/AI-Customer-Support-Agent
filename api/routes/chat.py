@@ -28,12 +28,40 @@ async def chat(request: ChatRequest, req: Request):
         history_window = chat_history[-HISTORY_LIMIT:]
         
         # Pass history to generate_response
-        response_text = await client.generate_response(request.message, conversation_history=history_window[:-1])
+        context = {
+            "swAccessKey": request.swAccessKey,
+            "swContextToken": request.swContextToken,
+            "shopUrl": request.shopUrl
+        }
+        # Filter None values
+        context = {k: v for k, v in context.items() if v is not None}
         
-        # Add assistant response to history
-        chat_history.append({"role": "assistant", "content": response_text})
+        response_data = await client.generate_response(request.message, conversation_history=history_window[:-1], context=context)
         
-        return ChatResponse(response=response_text)
+        # Add assistant message to history with a data summary if present
+        # This helps the LLM remember IDs for follow-up questions (e.g., "Tell me more about the first jacket")
+        assistant_content = response_data.get("message", "")
+        if response_data.get("data"):
+            data = response_data["data"]
+            if isinstance(data, dict) and "results" in data:
+                # Summarize list (ID and Name)
+                summary = " | ".join([f"{r.get('name')} (ID: {r.get('id')})" for r in data["results"][:3]])
+                assistant_content += f"\n[Displayed: {summary}]"
+            elif isinstance(data, dict) and "id" in data:
+                # Single item
+                assistant_content += f"\n[Displayed: {data.get('name')} (ID: {data.get('id')})]"
+        
+        chat_history.append({"role": "assistant", "content": assistant_content})
+
+        logger.info(f"Assistant response: {assistant_content}")
+        logger.info(f"Conversation history: {chat_history}")
+        
+        return ChatResponse(
+            message=response_data.get("message", ""),
+            type=response_data.get("type", "text"),
+            data=response_data.get("data"),
+            context={**context, **(response_data.get("context") or {})}
+        )
     except Exception as e:
         logger.error(f"Error generating response: {e}")
         # Return a generic error message or raise HTTPException

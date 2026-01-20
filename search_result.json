@@ -1,0 +1,58 @@
+{
+  "message": "I found these 3 jackets for you!",
+  "type": "product_list",
+  "data": {
+    "results": [
+      {
+        "id": "0199951287f071ac9740514c9abbe40e",
+        "productNumber": "SW10009.2",
+        "name": "Winter Jacket",
+        "price": 149,
+        "stock": 0,
+        "options": [
+          {
+            "group": "Colour",
+            "option": "Blue"
+          },
+          {
+            "group": "Size",
+            "option": "XL"
+          }
+        ],
+        "imageUrl": "https://shopware67demo.buildsite.in/media/1a/c2/81/1759142507/download (2)_(1).jpeg?ts=1759142507",
+        "url": "https://shopware67demo.buildsite.in/Winter-Jacket/SW10009.2"
+      },
+      {
+        "id": "0199855af19470e2b7e3f8e75ed898f2",
+        "productNumber": "SW10007",
+        "name": "Nike Winter Jacket",
+        "price": 1,
+        "stock": 98,
+        "options": [],
+        "imageUrl": "https://shopware67demo.buildsite.in/media/c7/50/78/1758879087/download (2).jpeg?ts=1758879087",
+        "url": "https://shopware67demo.buildsite.in/Nike-Winter-Jacket/SW10007"
+      },
+      {
+        "id": "0199a9e8764275708864460989f2971c",
+        "productNumber": "SW10010",
+        "name": "Woolen Jacket",
+        "price": 149,
+        "stock": 0,
+        "options": [],
+        "imageUrl": null,
+        "url": "https://shopware67demo.buildsite.in/Woolen-Jacket/SW10010"
+      }
+    ],
+    "searchTerm": "jacket",
+    "pagination": {
+      "total": 3,
+      "page": 1,
+      "limit": 3,
+      "hasNextPage": false
+    }
+  },
+  "context": {
+    "swAccessKey": "SWSCAVBKV3VZOTFHUUR1QTJKUW",
+    "shopUrl": "https://shopware67demo.buildsite.in"
+  }
+}
