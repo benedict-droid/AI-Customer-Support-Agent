@@ -132,7 +132,7 @@ class OpenAIClient(BaseLLMClient):
                 
                 # --- HYBRID STITCHING LOGIC ---
                 # Automatically inject data if it's a structured response type
-                if parsed_response.get("type") in ["product_list", "product_detail", "order_list"]:
+                if parsed_response.get("type") in ["product_list", "product_detail", "order_list", "cart_list"]:
                     parsed_response["data"] = last_tool_data
                 else:
                     # For "text" or unknown types, ensure data is null or omitted
