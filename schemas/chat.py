@@ -5,9 +5,11 @@ class ChatRequest(BaseModel):
     swAccessKey: str | None = None
     swContextToken: str | None = None
     shopUrl: str | None = None
+    pageContext: dict | None = None
 
 class ChatResponse(BaseModel):
     message: str
     type: str = "text"
+    suggestions: list[str] | None = None
     data: list | dict | None = None
     context: dict | None = None

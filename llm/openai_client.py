@@ -121,6 +121,7 @@ class OpenAIClient(BaseLLMClient):
 
             # Attempt to parse as JSON and Stitch Data
             try:
+                logger.info(f"Raw LLM Content: {final_content}")
                 parsed_response = json.loads(final_content)
                 # Ensure it has the required fields
                 if not isinstance(parsed_response, dict) or "message" not in parsed_response:
@@ -131,13 +132,16 @@ class OpenAIClient(BaseLLMClient):
                     }
                 
                 # --- HYBRID STITCHING LOGIC ---
-                # Automatically inject data if it's a structured response type
                 if parsed_response.get("type") in ["product_list", "product_detail", "order_list", "cart_list"]:
                     parsed_response["data"] = last_tool_data
                 else:
                     # For "text" or unknown types, ensure data is null or omitted
                     if "data" not in parsed_response:
                         parsed_response["data"] = None
+                
+                # Ensure suggestions is None if missing
+                if "suggestions" not in parsed_response:
+                    parsed_response["suggestions"] = None
 
                 return parsed_response
 
