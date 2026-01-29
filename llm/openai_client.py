@@ -20,7 +20,7 @@ class OpenAIClient(BaseLLMClient):
         self.client = OpenAI(api_key=api_key)
         self.mcp_clients = mcp_clients or []
 
-    async def generate_response(self, message: str, conversation_history: list = None) -> str:
+    async def generate_response(self, message: str, conversation_history: list = None, context: dict = None) -> dict:
         try:
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
             if conversation_history:
@@ -47,14 +47,9 @@ class OpenAIClient(BaseLLMClient):
                             tool_to_client_map[tool.name] = client
                     except Exception as e:
                         logger.error(f"Failed to list tools from client {client}: {repr(e)}")
-                        import traceback
-                        logger.error(traceback.format_exc())
 
             logger.info(f"Sending request to OpenAI with {len(tools)} tools")
             
-            import time
-            start_time = time.perf_counter()
-
             # First API call
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -62,31 +57,46 @@ class OpenAIClient(BaseLLMClient):
                 tools=tools if tools else None,
             )
             
-            duration = time.perf_counter() - start_time
-            logger.info(f"OpenAI initial response received in {duration:.3f}s")
-            
             response_message = response.choices[0].message
             tool_calls = response_message.tool_calls
 
             if tool_calls:
                 messages.append(response_message)
+                last_tool_data = None
                 
                 for tool_call in tool_calls:
                     function_name = tool_call.function.name
                     function_args = json.loads(tool_call.function.arguments)
                     
-                    logger.info(f"Executing tool: {function_name} with args: {function_args}")
+                    logger.info(f"Executing tool: {function_name}")
                     
                     client = tool_to_client_map.get(function_name)
                     if not client:
-                         logger.error(f"No client found for tool: {function_name}")
                          function_response = json.dumps({"error": f"Tool {function_name} not found"})
                     else:
                         try:
+                            if context:
+                                function_args.update(context)
                             tool_result = await client.call_tool(function_name, function_args)
-                            function_response = str(tool_result.content)
-                            logger.info(f"Tool {function_name} result: {function_response}")
+                            # Correctly extract text from tool result content
+                            function_response = ""
+                            if hasattr(tool_result, 'content'):
+                                for content in tool_result.content:
+                                    if hasattr(content, 'text'):
+                                        function_response += content.text
+                                    elif isinstance(content, dict) and 'text' in content:
+                                        function_response += content['text']
+                                    else:
+                                        function_response += str(content)
+                            else:
+                                function_response = str(tool_result)
                             
+                            # Capture tool data for stitching (attempt to parse JSON)
+                            try:
+                                last_tool_data = json.loads(function_response)
+                            except:
+                                last_tool_data = function_response
+
                         except Exception as e:
                             logger.error(f"Tool execution failed: {e}")
                             function_response = json.dumps({"error": str(e)})
@@ -98,18 +108,49 @@ class OpenAIClient(BaseLLMClient):
                         "content": function_response,
                     })
                 
-                # Second API call with tool outputs
-                start_time_2 = time.perf_counter()
+                # Second API call with tool outputs (LLM now only provides message and type)
                 second_response = self.client.chat.completions.create(
                     model=self.model,
-                    messages=messages
+                    messages=messages,
+                    response_format={ "type": "json_object" }
                 )
-                duration_2 = time.perf_counter() - start_time_2
-                logger.info(f"OpenAI final response received in {duration_2:.3f}s")
+                final_content = second_response.choices[0].message.content
+            else:
+                final_content = response_message.content
+                last_tool_data = None
 
-                return second_response.choices[0].message.content
-            
-            return response_message.content
+            # Attempt to parse as JSON and Stitch Data
+            try:
+                logger.info(f"Raw LLM Content: {final_content}")
+                parsed_response = json.loads(final_content)
+                # Ensure it has the required fields
+                if not isinstance(parsed_response, dict) or "message" not in parsed_response:
+                    return {
+                        "message": final_content,
+                        "type": "text",
+                        "data": None
+                    }
+                
+                # --- HYBRID STITCHING LOGIC ---
+                if parsed_response.get("type") in ["product_list", "product_detail", "order_list", "cart_list"]:
+                    parsed_response["data"] = last_tool_data
+                else:
+                    # For "text" or unknown types, ensure data is null or omitted
+                    if "data" not in parsed_response:
+                        parsed_response["data"] = None
+                
+                # Ensure suggestions is None if missing
+                if "suggestions" not in parsed_response:
+                    parsed_response["suggestions"] = None
+
+                return parsed_response
+
+            except json.JSONDecodeError:
+                return {
+                    "message": final_content,
+                    "type": "text",
+                    "data": None
+                }
 
         except Exception as e:
             logger.error(f"Error calling OpenAI API: {e}")

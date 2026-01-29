@@ -17,12 +17,16 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger(__name__)
     logger.info("Application startup: Logging initialized")
     
-    # Initialize Shopware MCP Client
-    shopware_client = MCPClient("http://localhost:3333/sse")
-    await shopware_client.connect()
+    # Initialize Shopware Store MCP Client (Storefront)
+    shopware_store_client = MCPClient("http://localhost:3334/sse")
+    try:
+        await shopware_store_client.connect()
+    except Exception as e:
+        logger.error(f"Failed to connect to Shopware Store MCP: {e}")
+    # logger.info("Skipping Shopware Store MCP connection for debugging")
     
     # Store in a list for multi-client support
-    app.state.mcp_clients = [shopware_client]
+    app.state.mcp_clients = [shopware_store_client]
     
     yield
     
