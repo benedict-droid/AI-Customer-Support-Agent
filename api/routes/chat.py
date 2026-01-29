@@ -38,6 +38,7 @@ async def chat(request: ChatRequest, req: Request):
     sessions[session_id]["history"].append({"role": "user", "content": request.message})
     
     # 3.5. Handle Frontend Context (Page Tracking)
+    
     if request.pageContext is not None:
         p_id = request.pageContext.get("productId")
         if p_id:
@@ -86,9 +87,9 @@ async def chat(request: ChatRequest, req: Request):
                 f"SYSTEM NOTE: User is currently viewing product '{active_product['name']}' "
                 f"(ID: {active_product['id']}). "
                 f"IMPORTANT: You have NOT loaded the full details for this product yet. "
-                f"If the user asks specific questions like 'is it waterproof?' or 'features', "
-                f"you MUST call the `store_product_detail` tool with ID '{active_product['id']}' "
-                f"to retrieve the description and specs before answering."
+                f"If the user asks ANY question about the product (attributes, ingredients, veg/non-veg, usage, size, delivery, waterproof, delivery time, shipping, capacity, size, features, or any question query related to the product), "
+                f"you MUST call the `store_product_detail` tool with ID '{active_product['id']}' first. "
+                f"DO NOT answer solely from the context preview."
             )
             # Insert at the beginning of history so it's treated as background context
             conversation_history.insert(0, {"role": "system", "content": context_msg})
@@ -111,7 +112,14 @@ async def chat(request: ChatRequest, req: Request):
         response_data = await client.generate_response(request.message, conversation_history=conversation_history, context=context)
         
         # Add assistant message to history with a data summary if present
-        assistant_content = response_data.get("message", "")
+        user_content = response_data.get("message", "")
+        
+        # SANITIZATION: Safety net against LLM leaking system logs
+        if "SYSTEM_CONTEXT" in user_content:
+            logger.warning("Sanitized LLM response removing SYSTEM_CONTEXT leak.")
+            user_content = user_content.split("SYSTEM_CONTEXT")[0].strip()
+            
+        history_content = user_content
         
         # UPDATE STATE (Active Context)
         resp_type = response_data.get("type")
@@ -130,27 +138,37 @@ async def chat(request: ChatRequest, req: Request):
             sessions[session_id]["context"]["active_product"] = None
             logger.info("Cleared Active Product Context")
 
+        # Context Injection for History (invisible to user)
         if response_data.get("data"):
             data = response_data["data"]
             if isinstance(data, dict) and "results" in data:
+                # Capture Search Metadata
+                term = data.get("searchTerm", "unknown")
+                page_info = data.get("pagination", {})
+                page = page_info.get("page", 1)
+                total_pages = 1 # simplified inference or could calculate
+                if page_info.get("limit") and page_info.get("total"):
+                    import math
+                    total_pages = math.ceil(page_info.get("total") / page_info.get("limit"))
+
                 # Summarize list (ID and Name)
                 summary = " | ".join([f"{r.get('name')} (ID: {r.get('id')})" for r in data["results"][:3]])
-                assistant_content += f"\n[Displayed: {summary}]"
+                history_content += f"\nSYSTEM_CONTEXT: SEARCH STATE: Term='{term}', Page={page}/{total_pages}. Displayed items: [{summary}]"
             elif isinstance(data, dict) and "id" in data:
                 # Single item - include description in history for context
                 desc = data.get('description', '') or ''
-                # Truncate description to save context tokens, but keep enough for Q&A
+                # Truncate description to save context tokens
                 desc_preview = (desc[:2000] + '...') if len(desc) > 2000 else desc
-                assistant_content += f"\n[Displayed: {data.get('name')} (ID: {data.get('id')})\nDescription: {desc_preview}]"
+                history_content += f"\nSYSTEM_CONTEXT: Displayed item: {data.get('name')} (ID: {data.get('id')})\nDescription (PREVIEW - Call detail tool for full text): {desc_preview}"
         
-        # 5. Save Assistant Message to THIS session
-        sessions[session_id]["history"].append({"role": "assistant", "content": assistant_content})
+        # 5. Save Extended Message to History (so LLM remembers what it showed)
+        sessions[session_id]["history"].append({"role": "assistant", "content": history_content})
 
-        logger.info(f"Assistant response: {assistant_content}")
+        logger.info(f"Assistant response: {user_content}")
         logger.debug(f"Session {session_id} history length: {len(sessions[session_id]['history'])}")
         
         return ChatResponse(
-            message=response_data.get("message", ""),
+            message=user_content, # Return ONLY the clean message to User
             type=response_data.get("type", "text"),
             data=response_data.get("data"),
             suggestions=response_data.get("suggestions"),
@@ -158,4 +176,4 @@ async def chat(request: ChatRequest, req: Request):
         )
     except Exception as e:
         logger.error(f"Error generating response: {e}")
-        return ChatResponse(response="Sorry, I encountered an error providing a response.")
+        return ChatResponse(message="Sorry, I encountered an error providing a response.")

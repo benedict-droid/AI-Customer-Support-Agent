@@ -11,5 +11,5 @@ class ChatResponse(BaseModel):
     message: str
     type: str = "text"
     suggestions: list[str] | None = None
-    data: list | dict | None = None
+    data: list | dict | str | None = None
     context: dict | None = None
