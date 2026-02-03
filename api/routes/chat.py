@@ -30,10 +30,6 @@ async def chat(request: ChatRequest, req: Request):
     if session_id not in sessions:
         sessions[session_id] = {"history": [], "context": {"active_product": None}}
     
-    # Migration for old list-based sessions (development helper)
-    if isinstance(sessions[session_id], list):
-        sessions[session_id] = {"history": sessions[session_id], "context": {"active_product": None}}
-    
     # 3. Add User Message
     sessions[session_id]["history"].append({"role": "user", "content": request.message})
     
@@ -71,25 +67,15 @@ async def chat(request: ChatRequest, req: Request):
             # This is critical for "landing page" questions where the user hasn't browsed yet
             product_context_desc = ""
             
-            # Simple in-memory cache check or just fetch if we have ID
-            # In a real app we'd cache this, but for now we fetch to be accurate
-            if active_product.get('id') and not active_product.get('description'):
-                try:
-                    # We need to fetch details to answer questions like "is it waterproof"
-                    # We use the generic generic_search or product_detail tool logic here
-                    # For simplicity, we'll try to use the client directly if possible or just warn the LLM
-                    # A better way is to tell LLM: "User is on Product X. YOU MUST CALL store_product_detail(id=X) to answer specific questions."
-                    pass
-                except Exception as e:
-                    logger.error(f"Failed to auto-fetch context details: {e}")
+
 
             context_msg = (
                 f"SYSTEM NOTE: User is currently viewing product '{active_product['name']}' "
                 f"(ID: {active_product['id']}). "
-                f"IMPORTANT: You have NOT loaded the full details for this product yet. "
-                f"If the user asks ANY question about the product (attributes, ingredients, veg/non-veg, usage, size, delivery, waterproof, delivery time, shipping, capacity, size, features, or any question query related to the product), "
-                f"you MUST call the `store_product_detail` tool with ID '{active_product['id']}' first. "
-                f"DO NOT answer solely from the context preview."
+                f"IMPORTANT: This is the ONLY active product. Ignore any previous products in history. "
+                f"If the user asks ANY question about THIS product (price, attributes, features, etc.), "
+                f"you MUST call the `store_product_detail` tool with ID '{active_product['id']}'. "
+                f"DO NOT guess. DO NOT use IDs from previous messages."
             )
             # Insert at the beginning of history so it's treated as background context
             conversation_history.insert(0, {"role": "system", "content": context_msg})
@@ -99,6 +85,7 @@ async def chat(request: ChatRequest, req: Request):
         context = {
             "swAccessKey": request.swAccessKey,
             "swContextToken": request.swContextToken,
+            "swLanguageId": request.swLanguageId,
             "shopUrl": request.shopUrl
         }
         # Filter None values

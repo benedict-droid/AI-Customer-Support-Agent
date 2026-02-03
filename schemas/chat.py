@@ -4,6 +4,7 @@ class ChatRequest(BaseModel):
     message: str
     swAccessKey: str | None = None
     swContextToken: str | None = None
+    swLanguageId: str | None = None
     shopUrl: str | None = None
     pageContext: dict | None = None
 
