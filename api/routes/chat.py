@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 from schemas.chat import ChatRequest, ChatResponse
+from pydantic import BaseModel
 import logging
 import os
 
@@ -14,8 +15,31 @@ logger = logging.getLogger(__name__)
 sessions = {}
 HISTORY_LIMIT = int(os.getenv("CHAT_HISTORY_LIMIT", "6"))
 
-@router.post("/", response_model=ChatResponse)
+class ClearRequest(BaseModel):
+    swContextToken: str
+
+@router.post("/clear", summary="Clear Chat History", description="Clears the chat history for the specified session token.")
+async def clear_history(request: ClearRequest):
+    """
+    Clears the in-memory chat history for the given shopware context token.
+    """
+    token = request.swContextToken
+    if token in sessions:
+        del sessions[token]
+        logger.info(f"Cleared session history for token: {token}")
+    else:
+        logger.info(f"Session token not found for clearing: {token}")
+    return {"status": "success"}
+
+@router.post("/", response_model=ChatResponse, summary="Send Chat Message", description="Main interaction endpoint. Sends a user message and returns an AI response with optional structured data.")
 async def chat(request: ChatRequest, req: Request):
+    """
+    Processes a user message, interacts with the LLM (and tools), and returns a structured response.
+    
+    - **message**: User input.
+    - **swContextToken**: Session identifier (Critical for memory).
+    - **pageContext**: Information about the page the user is viewing (e.g. active product).
+    """
     print(f"\n[DEBUG] INCOMING REQUEST: {request.message}")
     print(f"[DEBUG] Full PageContext: {request.pageContext}")
     logger.info(f"Received chat message: {request.message}")

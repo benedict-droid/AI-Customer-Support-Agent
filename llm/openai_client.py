@@ -64,6 +64,9 @@ class OpenAIClient(BaseLLMClient):
                 messages.append(response_message)
                 last_tool_data = None
                 
+                # Store results for all tools
+                tool_results_map = {}
+                
                 for tool_call in tool_calls:
                     function_name = tool_call.function.name
                     function_args = json.loads(tool_call.function.arguments)
@@ -93,9 +96,10 @@ class OpenAIClient(BaseLLMClient):
                             
                             # Capture tool data for stitching (attempt to parse JSON)
                             try:
-                                last_tool_data = json.loads(function_response)
+                                parsed_tool_data = json.loads(function_response)
+                                tool_results_map[function_name] = parsed_tool_data
                             except:
-                                last_tool_data = function_response
+                                tool_results_map[function_name] = function_response
 
                         except Exception as e:
                             logger.error(f"Tool execution failed: {e}")
@@ -108,6 +112,101 @@ class OpenAIClient(BaseLLMClient):
                         "content": function_response,
                     })
                 
+                # --- CROSS-SELLING INTERCEPTOR ---
+                if "store_cart_add" in tool_results_map:
+                    try:
+                        search_tool = "store_product_search"
+                        search_client = tool_to_client_map.get(search_tool)
+                        
+                        # 1. Get Product ID from Cart Add
+                        added_product_id = None
+                        for tool_call in tool_calls:
+                            if tool_call.function.name == "store_cart_add":
+                                args = json.loads(tool_call.function.arguments)
+                                added_product_id = args.get("productId")
+                                break
+                        
+                        if added_product_id and search_client:
+                            # 2. Fetch Product Details (Internal Tool Call) to get Category
+                            detail_tool = "store_product_detail"
+                            detail_client = tool_to_client_map.get(detail_tool)
+                            
+                            category_name = None
+                            
+                            if detail_client:
+                                try:
+                                    logger.info(f"Fetching details for product {added_product_id} to find category...")
+                                    detail_args = {"productId": added_product_id}
+                                    if context: detail_args.update(context)
+                                    
+                                    detail_result = await detail_client.call_tool(detail_tool, detail_args)
+                                    # Extract JSON from detail result
+                                    detail_json_str = ""
+                                    if hasattr(detail_result, 'content'):
+                                        for content in detail_result.content:
+                                            if hasattr(content, 'text'):
+                                                detail_json_str += content.text
+                                    else:
+                                        detail_json_str = str(detail_result)
+                                        
+                                    try:
+                                        product_details = json.loads(detail_json_str)
+                                        category_name = product_details.get("categoryName")
+                                        if not category_name and product_details.get("name"):
+                                             # Fallback to name if category missing, but user specifically asked for category logic.
+                                             # User said "if the add to cart have category then only... else no need to show"
+                                             # So we should be strict.
+                                             pass
+                                    except:
+                                        pass
+                                except Exception as e:
+                                    logger.error(f"Failed to fetch product details for cross-sell: {e}")
+
+                            # 3. Conditional Search
+                            if category_name:
+                                search_term = f"{category_name} accessories or related products"
+                                logger.info(f"Cross-Sell: Found category '{category_name}'. Searching for: {search_term}")
+                                
+                                search_args = {"term": search_term}
+                                if context: search_args.update(context)
+                                
+                                # Execute the tool directly
+                                tool_result = await search_client.call_tool(search_tool, search_args)
+                            
+                            # Extract content
+                            cs_response = ""
+                            if hasattr(tool_result, 'content'):
+                                for content in tool_result.content:
+                                    if hasattr(content, 'text'):
+                                        cs_response += content.text
+                                    elif isinstance(content, dict) and 'text' in content:
+                                        cs_response += content['text']
+                                    else:
+                                        cs_response += str(content)
+                            else:
+                                cs_response = str(tool_result)
+                            
+                            # Conditional Check: Only inject if results found
+                            # We look for "total": 0 or explicit empty list if parsed, or heuristic string check
+                            has_results = True
+                            if '"total": 0' in cs_response or '"total":0' in cs_response:
+                                has_results = False
+                            
+                            if has_results:
+                                # 3. Add to results map so Stitching Logic sees it (and sets type=product_list)
+                                try:
+                                    parsed_cs = json.loads(cs_response)
+                                    tool_results_map[search_tool] = parsed_cs
+                                    
+                                    # 4. Inject System Instruction for the LLM's text generation
+                                    messages.append({
+                                        "role": "system", 
+                                        "content": f"SYSTEM AUTO-ACTION: Cart Add Successful. I performed a background search for '{search_term}'. Found: {cs_response}. Please recommend these items to the user in your response and ensure the response type is 'product_list'."
+                                    })
+                                except:
+                                    pass
+                    except Exception as e:
+                        logger.error(f"Cross-selling interceptor failed: {e}")
                 # Second API call with tool outputs (LLM now only provides message and type)
                 second_response = self.client.chat.completions.create(
                     model=self.model,
@@ -117,7 +216,7 @@ class OpenAIClient(BaseLLMClient):
                 final_content = second_response.choices[0].message.content
             else:
                 final_content = response_message.content
-                last_tool_data = None
+                tool_results_map = {}
 
             # Attempt to parse as JSON and Stitch Data
             try:
@@ -132,8 +231,30 @@ class OpenAIClient(BaseLLMClient):
                     }
                 
                 # --- HYBRID STITCHING LOGIC ---
-                if parsed_response.get("type") in ["product_list", "product_detail", "order_list", "cart_list"]:
-                    parsed_response["data"] = last_tool_data
+                resp_type = parsed_response.get("type")
+                
+                # Map response types to expected tool sources
+                type_to_tool = {
+                    "product_list": "store_product_search",
+                    "product_detail": "store_product_detail",
+                    "cart_list": "store_cart_get",
+                    "order_list": "store_order_list" # Assuming this tool exists
+                }
+                
+                if resp_type in type_to_tool:
+                    # Try to get data from the specific tool if it was called
+                    target_tool = type_to_tool[resp_type]
+                    if target_tool in tool_results_map:
+                        parsed_response["data"] = tool_results_map[target_tool]
+                    elif len(tool_results_map) > 0:
+                        # Fallback: if specific tool missing but others exist, use the most recent one? 
+                        # Or better, just grab the first one that looks like a match?
+                        # For now, let's just grab values()[0] if single tool, or leave None to avoid mismatch
+                        # Actually, looking at previous logic, it just took 'last_tool_data'.
+                        # Let's try to be smart:
+                         parsed_response["data"] = list(tool_results_map.values())[-1]
+                    else:
+                        parsed_response["data"] = None
                 else:
                     # For "text" or unknown types, ensure data is null or omitted
                     if "data" not in parsed_response:

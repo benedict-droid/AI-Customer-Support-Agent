@@ -17,7 +17,7 @@ class MCPClient:
     """
     Manages the connection to the Shopware MCP server via SSE.
     """
-    def __init__(self, sse_url: str = "http://localhost:3333/sse"):
+    def __init__(self, sse_url: str = "http://localhost:3334/sse"):
         self.sse_url = sse_url
         self.session: ClientSession | None = None
         self._exit_stack = None
