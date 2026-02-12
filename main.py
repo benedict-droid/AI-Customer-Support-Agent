@@ -18,7 +18,8 @@ async def lifespan(app: FastAPI):
     logger.info("Application startup: Logging initialized")
     
     # Initialize Shopware Store MCP Client (Storefront)
-    shopware_store_client = MCPClient("http://localhost:3334/sse")
+    mcp_url = os.getenv("MCP_SERVER_URL", "http://localhost:3334/sse")
+    shopware_store_client = MCPClient(mcp_url)
     try:
         await shopware_store_client.connect()
     except Exception as e:
