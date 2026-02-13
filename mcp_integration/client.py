@@ -126,8 +126,9 @@ class MCPClient:
         if self.active_store_name:
             creds = self.stores[self.active_store_name]
             arguments = arguments.copy() # Don't mutate original dict
-            arguments["shop_url"] = creds.shop_url
-            arguments["client_id"] = creds.client_id
+            arguments["shopUrl"] = creds.shop_url
+            arguments["swAccessKey"] = creds.client_id
+            # Shopware Storefront API doesn't use client_secret, only Access Key
         else:
              logger.warning("No active store set. Tool call might fail if credentials are required.")
 
