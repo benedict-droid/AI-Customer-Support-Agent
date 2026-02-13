@@ -126,8 +126,15 @@ class MCPClient:
         if self.active_store_name:
             creds = self.stores[self.active_store_name]
             arguments = arguments.copy() # Don't mutate original dict
-            arguments["shopUrl"] = creds.shop_url
-            arguments["swAccessKey"] = creds.client_id
+            
+            # User arguments (from frontend/context) take precedence for dynamic fields like URL
+            if "shopUrl" not in arguments or not arguments["shopUrl"]:
+                arguments["shopUrl"] = creds.shop_url
+            
+            # Access Key is also injectable, but fallback to env
+            if "swAccessKey" not in arguments or not arguments["swAccessKey"]:
+                arguments["swAccessKey"] = creds.client_id
+                
             # Shopware Storefront API doesn't use client_secret, only Access Key
         else:
              logger.warning("No active store set. Tool call might fail if credentials are required.")
