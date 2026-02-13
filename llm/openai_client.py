@@ -32,21 +32,20 @@ class OpenAIClient(BaseLLMClient):
 
             # Fetch tools from all clients
             for client in self.mcp_clients:
-                if client.session:
-                    try:
-                        mcp_tools = await client.list_tools()
-                        for tool in mcp_tools:
-                            tools.append({
-                                "type": "function",
-                                "function": {
-                                    "name": tool.name,
-                                    "description": tool.description,
-                                    "parameters": tool.inputSchema
-                                }
-                            })
-                            tool_to_client_map[tool.name] = client
-                    except Exception as e:
-                        logger.error(f"Failed to list tools from client {client}: {repr(e)}")
+                try:
+                    mcp_tools = await client.list_tools()
+                    for tool in mcp_tools:
+                        tools.append({
+                            "type": "function",
+                            "function": {
+                                "name": tool.name,
+                                "description": tool.description,
+                                "parameters": tool.inputSchema
+                            }
+                        })
+                        tool_to_client_map[tool.name] = client
+                except Exception as e:
+                    logger.error(f"Failed to list tools from client {client}: {repr(e)}")
 
             logger.info(f"Sending request to OpenAI with {len(tools)} tools")
             

@@ -2,6 +2,7 @@ from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
 import logging
 import os
+import asyncio
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -20,6 +21,7 @@ class MCPClient:
         self.sse_url = sse_url
         self.session: ClientSession | None = None
         self._exit_stack = None
+        self._lock = asyncio.Lock()
         self.stores: Dict[str, StoreCredentials] = {}
         self.active_store_name: Optional[str] = None
         
@@ -77,18 +79,48 @@ class MCPClient:
         self.session = None
         logger.info("Disconnected from MCP server")
 
+    async def ensure_connected(self):
+        """Ensure the MCP client is connected, reconnecting if necessary."""
+        if self.session:
+            return
+
+        async with self._lock:
+            # Check again after acquiring lock (double-check locking pattern)
+            if self.session:
+                return
+
+            logger.warning("MCP Client not connected. Attempting to reconnect...")
+            try:
+                await self.connect()
+            except Exception as e:
+                logger.error(f"Reconnection failed: {e}")
+                raise
+
     async def list_tools(self):
         """List available tools from the MCP server."""
-        if not self.session:
-            raise RuntimeError("MCP Client is not connected")
+        await self.ensure_connected()
         
-        result = await self.session.list_tools()
-        return result.tools
+        try:
+            result = await self.session.list_tools()
+            return result.tools
+        except Exception as e:
+            # For list_tools, we can be aggressive with retries because it's a read-only op
+            # and critical for the system to work.
+            logger.warning(f"Error during list_tools ({type(e).__name__}: {e}). Reconnecting and retrying...")
+            await self.disconnect()
+            await self.ensure_connected()
+            
+            # Retry once
+            try:
+                result = await self.session.list_tools()
+                return result.tools
+            except Exception as retry_e:
+                logger.error(f"Retry failed for list_tools: {retry_e}")
+                raise retry_e
 
     async def call_tool(self, name: str, arguments: dict):
         """Call a specific tool on the MCP server."""
-        if not self.session:
-            raise RuntimeError("MCP Client is not connected")
+        await self.ensure_connected()
         
         # Inject active store credentials
         if self.active_store_name:
@@ -109,6 +141,23 @@ class MCPClient:
             logger.info(f"MCP tool '{name}' executed in {duration:.3f}s")
             return result
         except Exception as e:
+            # Check for connection-related errors
+            error_msg = str(e).lower()
+            if "connection" in error_msg or "broken pipe" in error_msg or "closed" in error_msg:
+                logger.warning(f"Connection lost during tool call '{name}'. Reconnecting and retrying...")
+                await self.disconnect()
+                await self.ensure_connected()
+                
+                # Retry once
+                try:
+                    result = await self.session.call_tool(name, arguments)
+                    duration = time.perf_counter() - start_time
+                    logger.info(f"MCP tool '{name}' executed successfully after retry in {duration:.3f}s")
+                    return result
+                except Exception as retry_e:
+                    logger.error(f"Retry failed for tool '{name}': {retry_e}")
+                    raise retry_e
+            
             duration = time.perf_counter() - start_time
             logger.error(f"MCP tool '{name}' failed after {duration:.3f}s: {e}")
             raise e
