@@ -105,6 +105,14 @@ async def chat(request: ChatRequest, req: Request):
             conversation_history.insert(0, {"role": "system", "content": context_msg})
             logger.info(f"Injected Active Context: {active_product['name']}")
         
+        # INJECT LANGUAGE INSTRUCTION
+        if request.swLanguageCode:
+            lang_code = request.swLanguageCode
+            lang_instruction = f"SYSTEM: The user is browsing in locale '{lang_code}'. Please provide your response (message AND suggestions) in the corresponding language (e.g. German for de-DE, English for en-GB)."
+            # Insert at the VERY beginning (before product context if exists, or just first)
+            conversation_history.insert(0, {"role": "system", "content": lang_instruction})
+            logger.info(f"Injected Language Instruction: {lang_code}")
+        
         # Pass history to generate_response
         context = {
             "swAccessKey": request.swAccessKey,
@@ -182,7 +190,7 @@ async def chat(request: ChatRequest, req: Request):
             message=user_content, # Return ONLY the clean message to User
             type=response_data.get("type", "text"),
             data=response_data.get("data"),
-            suggestions=response_data.get("suggestions"),
+            suggestions=(response_data.get("suggestions") or [])[:2],
             context={**context, **(response_data.get("context") or {})}
         )
     except Exception as e:
