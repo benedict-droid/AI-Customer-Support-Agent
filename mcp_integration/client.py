@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 class StoreCredentials:
     shop_url: str
     client_id: str
-    client_secret: str
 
 class MCPClient:
     """
@@ -27,15 +26,14 @@ class MCPClient:
         # Initialize default store from environment if available
         default_url = os.getenv("SHOPWARE_API_URL")
         default_id = os.getenv("SHOPWARE_API_CLIENT_ID")
-        default_secret = os.getenv("SHOPWARE_API_CLIENT_SECRET")
         
-        if default_url and default_id and default_secret:
-            self.add_store("default", default_url, default_id, default_secret)
+        if default_url and default_id:
+            self.add_store("default", default_url, default_id)
             self.set_active_store("default")
 
-    def add_store(self, name: str, shop_url: str, client_id: str, client_secret: str):
+    def add_store(self, name: str, shop_url: str, client_id: str):
         """Add a new store configuration."""
-        self.stores[name] = StoreCredentials(shop_url, client_id, client_secret)
+        self.stores[name] = StoreCredentials(shop_url, client_id)
         logger.info(f"Added store '{name}'")
 
     def set_active_store(self, name: str):
@@ -98,7 +96,6 @@ class MCPClient:
             arguments = arguments.copy() # Don't mutate original dict
             arguments["shop_url"] = creds.shop_url
             arguments["client_id"] = creds.client_id
-            arguments["client_secret"] = creds.client_secret
         else:
              logger.warning("No active store set. Tool call might fail if credentials are required.")
 
