@@ -5,6 +5,7 @@ class ChatRequest(BaseModel):
     swAccessKey: str | None = Field(None, description="Shopware Sales Channel Access Key.", example="SWJAVW8YDRJ5RJN2D3I2WJ5WGA")
     swContextToken: str | None = Field(None, description="Shopware Context Token (Session/Cart ID).", example="a1b2c3d4e5f6...")
     swLanguageId: str | None = Field(None, description="Shopware Language ID for translation context.", example="2fbb5fe2e29a4d70aa5854ce7ce3e20b")
+    swLanguageCode: str | None = Field(None, description="Shopware Locale Code for LLM language instruction.", example="en-GB")
     shopUrl: str | None = Field(None, description="Base URL of the shop.", example="http://localhost:8000")
     pageContext: dict | None = Field(None, description="Current frontend state (e.g. active product).", example={"productId": "uuid...", "productName": "T-Shirt"})
 

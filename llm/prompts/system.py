@@ -71,9 +71,10 @@ RESPONSE FORMAT (MANDATORY)
 Always respond with VALID JSON:
 
 {
-  "message": "Short conversational response",
+  "message": "Short conversational response (in the user's language)",
   "type": "product_list" | "product_detail" | "order_list" | "cart_list" | "text",
-  "suggestions": ["Short follow-up 1", "Short follow-up 2"]
+  "suggestions": ["Follow-up 1", "Follow-up 2"] 
+  // NOTE: suggestions MUST be in the user's language and MAXIMUM 2 Items.
 }
 
 (System automatically attaches data based on `type`)
