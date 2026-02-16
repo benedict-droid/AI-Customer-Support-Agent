@@ -144,21 +144,27 @@ class MCPClient:
         logger.info(f"Calling MCP tool '{name}' with args: {arguments}")
         
         try:
-            result = await self.session.call_tool(name, arguments)
+            # Set a timeout for the tool call to prevent hanging indefinitely
+            timeout_seconds = 60.0
+            result = await asyncio.wait_for(self.session.call_tool(name, arguments), timeout=timeout_seconds)
+            
             duration = time.perf_counter() - start_time
             logger.info(f"MCP tool '{name}' executed in {duration:.3f}s")
             return result
         except Exception as e:
-            # Check for connection-related errors
+            # Check for connection-related errors or timeouts
+            is_timeout = isinstance(e, asyncio.TimeoutError)
             error_msg = str(e).lower()
-            if "connection" in error_msg or "broken pipe" in error_msg or "closed" in error_msg:
-                logger.warning(f"Connection lost during tool call '{name}'. Reconnecting and retrying...")
+            
+            if is_timeout or "connection" in error_msg or "broken pipe" in error_msg or "closed" in error_msg:
+                reason = "Timeout" if is_timeout else "Connection lost"
+                logger.warning(f"{reason} during tool call '{name}'. Reconnecting and retrying...")
                 await self.disconnect()
                 await self.ensure_connected()
                 
                 # Retry once
                 try:
-                    result = await self.session.call_tool(name, arguments)
+                    result = await asyncio.wait_for(self.session.call_tool(name, arguments), timeout=timeout_seconds)
                     duration = time.perf_counter() - start_time
                     logger.info(f"MCP tool '{name}' executed successfully after retry in {duration:.3f}s")
                     return result
