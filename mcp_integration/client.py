@@ -145,7 +145,7 @@ class MCPClient:
         
         try:
             # Set a timeout for the tool call to prevent hanging indefinitely
-            timeout_seconds = 60.0
+            timeout_seconds = 45.0
             result = await asyncio.wait_for(self.session.call_tool(name, arguments), timeout=timeout_seconds)
             
             duration = time.perf_counter() - start_time
