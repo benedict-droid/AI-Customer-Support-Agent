@@ -44,6 +44,7 @@ SUPPORT PERSONA
 ====================
 SEARCH & FILTERING
 ====================
+- **PLURALS**: Always convert search terms to SINGULAR (e.g. search for 'Shirt' not 'Shirts')
 - Sorting options:
   - price-asc
   - price-desc
